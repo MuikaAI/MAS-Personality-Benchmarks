@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Muika After Story Benchmark 结果图表" />
+    <title>MAS Benchmark</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="dashboard">
+      <header class="page-header">
+        <div class="brand-block">
+          <img class="brand-logo" src="/logo.png" alt="" />
+          <div>
+            <p class="eyebrow" id="benchmark-title">MAS-PERSONALITY-BENCHMARK</p>
+            <h1 id="metric-title">客观对话体验</h1>
+            <p class="metric-description" id="metric-description">综合评估人格一致性、对话体感和情感支持。</p>
+          </div>
+        </div>
+
+        <div class="controls" aria-label="图表控制">
+          <details class="report-picker" id="report-picker">
+            <summary><span id="report-count">加载报告…</span><span aria-hidden="true">⌄</span></summary>
+            <div class="report-menu">
+              <label class="select-all"><input id="select-all" type="checkbox" />选择全部</label>
+              <div id="report-options" class="report-options"></div>
+            </div>
+          </details>
+          <nav class="metric-tabs" id="metric-tabs" aria-label="指标"></nav>
+          <button class="capture-button" id="capture-button" type="button">截图模式</button>
+        </div>
+      </header>
+
+      <section class="chart-panel" aria-labelledby="metric-title">
+        <div class="error-strip" id="error-strip" role="alert" hidden></div>
+        <div class="chart" id="chart" aria-live="polite"></div>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
