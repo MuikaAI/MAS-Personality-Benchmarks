@@ -1,0 +1,47 @@
+[project]
+name = "mas-personality-benchmarks"
+# 与 benchmarks/__init__.py 的 __version__ 保持一致；报告里的 benchmark_version 取自后者
+version = "0.5.4"
+description = "Muika-After-Story 的对话体验、行动能力与失真率基准测试"
+readme = "README.md"
+requires-python = ">=3.10.0, <3.14"
+dependencies = [
+    "aiohttp>=3.13.3",
+    # 基准直接调用 Muika 内部 API（Brain / loop / events / 模板加载），API 随主仓库演进而
+    # PyPI 只有 1.5.4（缺 CompactionModel 等），因此跟主仓库而不是发布版。
+    # uv.lock 会锁定解析到的具体 commit，报告里也记录实际版本，复现不受 main 移动影响。
+    "muika-after-story[standard] @ git+https://github.com/Moemu/Muika-After-Story.git",
+    # 下面两项是上游发布版漏声明的运行期依赖（主仓库里靠传递依赖碰巧装上），
+    # 独立安装环境必须显式带上；等上游补声明后可以删。
+    "pyyaml>=6.0",
+    "sqlalchemy[asyncio]>=2.0.46",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+# 仓库根目录就是 ``benchmarks`` 包本体（与主仓库内嵌套使用时同一套布局），
+# 因此把包名映射到 "."，这样独立克隆后 ``python -m benchmarks`` 在任何 cwd 下都可用。
+# 新增子包时需同步下面两张表。
+[tool.setuptools]
+packages = [
+    "benchmarks",
+    "benchmarks.dashboard",
+    "benchmarks.extract",
+    "benchmarks.judge",
+    "benchmarks.models",
+    "benchmarks.report",
+    "benchmarks.scenarios",
+    "benchmarks.scoring",
+]
+
+[tool.setuptools.package-dir]
+"benchmarks" = "."
+"benchmarks.dashboard" = "dashboard"
+"benchmarks.extract" = "extract"
+"benchmarks.judge" = "judge"
+"benchmarks.models" = "models"
+"benchmarks.report" = "report"
+"benchmarks.scenarios" = "scenarios"
+"benchmarks.scoring" = "scoring"

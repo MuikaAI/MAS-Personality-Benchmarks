@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.metadata
 import random
 import re
 import sys
@@ -15,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
+import muika
 from benchmarks import __version__ as benchmark_version
 from benchmarks.config import BenchmarkConfig, ModelSpec
 from benchmarks.extract.actions import classify_actions
@@ -60,6 +62,7 @@ from benchmarks.scoring.axes import refresh_axis_metrics
 from benchmarks.scoring.base import MetricResult, TrialDetail, TurnDetail
 from benchmarks.scoring.personality import rule_personality_score
 from benchmarks.util import redact
+from muika.config import mas_config
 from muika.core.brain import MuikaBrain
 from muika.core.events import (
     SessionBootstrapEvent,
@@ -73,6 +76,7 @@ from muika.core.memory import Fact, MemoryManager
 from muika.core.state import MuikaState
 from muika.llm.context import ContextCompactor
 from muika.models import Message
+from muika.template.loader import SEARCH_PATH as PERSONA_SEARCH_PATH
 
 GENERATION_FALLBACK = "My mind feels foggy... I encountered an error."
 
@@ -1090,22 +1094,47 @@ async def run_cell(
 
 
 def _git_revision() -> str | None:
-    repo_root = Path(__file__).resolve().parents[1]
+    """被测 Muika 的版本锚点。
+
+    优先读 Muika 安装位置附近的源码检出 commit（开发态可编辑安装）；独立克隆从 PyPI
+    装 ``muika-after-story`` 时没有 ``.git``，退回分发版本号——SCM 构建的版本串自带 git
+    短哈希（如 ``1.5.5.dev47+g8b0c214``），同样能定位到被测代码。
+    """
+    package_root = Path(muika.__file__).resolve().parent
+    for root in (package_root, package_root.parent):
+        try:
+            head = (root / ".git/HEAD").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not head.startswith("ref: "):
+            return head
+        try:
+            return (root / ".git" / head[5:]).read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
     try:
-        head = (repo_root / ".git/HEAD").read_text(encoding="utf-8").strip()
-        if head.startswith("ref: "):
-            return (repo_root / ".git" / head[5:]).read_text(encoding="utf-8").strip()
-        return head
-    except OSError:
+        return importlib.metadata.version("muika-after-story")
+    except importlib.metadata.PackageNotFoundError:
         return None
 
 
 def _persona_hash() -> str | None:
-    path = Path(__file__).resolve().parents[1] / "muika/builtin_templates/Muika.md.jinja2"
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return None
+    """哈希实际生效的人格模板，供报告复现用。
+
+    复用 ``muika.template.loader`` 的搜索路径（``./templates`` 覆盖层优先于包内
+    ``muika/builtin_templates``）与 ``mas_config.persona_template`` 配置名，因此能与
+    Brain 真正渲染的那份模板对齐。
+    """
+    template_name = mas_config.persona_template
+    if not template_name.endswith((".j2", ".jinja2")):
+        template_name += ".jinja2"
+    for base in PERSONA_SEARCH_PATH:
+        path = Path(base) / template_name
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return None
 
 
 async def run_benchmark(

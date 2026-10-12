@@ -6,16 +6,18 @@
 
 这里是 `MAS-Personality-Benchmarks` 基准测试的实现，通过此基准测试，我们希望能更好的评估各模型在角色扮演(Role Play)任务上的表现能力，以及 Muika-After-Story Framework 的可靠程度
 
+跑起来只要三步：`uv sync` → 写 `configs/models.yml` → `uv run python -m benchmarks`。详见[手动运行测试](#手动运行测试)。
+
 ## Results(v0.5.3)
 
 更新时间: 2026.08.24
 
 | Model               | 客观对话体验↑ | 行动能力↑ | 失真度↓  | 可用性↑  | 完整报告                                                     |
 | ------------------- | ------------- | --------- | -------- | -------- | ------------------------------------------------------------ |
-| DeepSeek Flash 0731 | 0.81          | 0.58      | 0.29     | **1.00** | [Json](benchmarks\reports\2026-08-21_153246_rescored.json) [Markdown](benchmarks\reports\2026-08-21_153246_rescored.md) |
-| Qwen 3.8-27B        | **0.86**      | **0.87**  | 0.15     | **1.00** | [Json](benchmarks\reports\2026-08-21_153246_rescored.json) [Markdown](benchmarks\reports\2026-08-21_153246_rescored.md) |
-| GLM 5.2             | 0.81          | 0.80      | 0.12     | 0.96     | [Json](benchmarks\reports\2026-08-21_153246_rescored.json) [Markdown](benchmarks\reports\2026-08-21_153246_rescored.md) |
-| GPT 5.6 Luna        | 0.78          | 0.60      | **0.01** | 0.99     | [Json](benchmarks\results\2026-08-24_092753.json) [Markdown](benchmarks\results\2026-08-24_092753.json) |
+| DeepSeek Flash 0731 | 0.81          | 0.58      | 0.29     | **1.00** | [Json](reports/2026-08-21_153246_rescored.json) [Markdown](reports/2026-08-21_153246_rescored.md) |
+| Qwen 3.8-27B        | **0.86**      | **0.87**  | 0.15     | **1.00** | [Json](reports/2026-08-21_153246_rescored.json) [Markdown](reports/2026-08-21_153246_rescored.md) |
+| GLM 5.2             | 0.81          | 0.80      | 0.12     | 0.96     | [Json](reports/2026-08-21_153246_rescored.json) [Markdown](reports/2026-08-21_153246_rescored.md) |
+| GPT 5.6 Luna        | 0.78          | 0.60      | **0.01** | 0.99     | [Json](results/2026-08-24_092753.json) [Markdown](results/2026-08-24_092753.json) |
 
 *LLM-As-Judge 评估模型: Qwen 3.7 Flash
 
@@ -133,7 +135,39 @@ Judge 再检查以下内容：
 
 ## 手动运行测试
 
-先在 `configs/models.yml` 中配置候选模型和 Judge
+### 准备环境
+
+```powershell
+git clone https://github.com/MuikaAI/MAS-Personality-Benchmarks.git
+cd MAS-Personality-Benchmarks
+uv sync
+```
+
+被测的 Muika 由 git 源安装（不用发布版：基准调用的内部 API 比 PyPI 上的新），`uv.lock` 锁定到具体 commit，想换版本用 `uv lock --upgrade-package muika-after-story`。
+
+仓库根目录本身按 `benchmarks` 包装进环境，所以 `python -m benchmarks` 在任何 cwd 下都能找到代码。只有 `configs/models.yml` 相对运行目录解析，命令要在放有 `configs/` 的那一级执行。
+
+### 准备模型配置
+
+基准从运行目录下的 `configs/models.yml` 读取候选模型与 Judge，该文件需要自己写，字段说明见[模型配置](https://mas.snowy.moe/guide/model)。
+
+只要求两项：每个候选模型一个配置项（键名就是传给 `--models` 的值），Judge 一个配置项（键名就是传给 `--judge-model` 的值）。Judge 用与候选不同的模型，避免自评偏差。
+
+```yaml
+# configs/models.yml（最小示例，api_key 换成自己的）
+candidate_a:
+  provider: Openai            # 用哪个 Provider 适配器
+  model_name: deepseek-chat   # 被测模型
+  api_key: sk-xxxx
+  api_host: https://api.deepseek.com/   # 非官方端点才需要
+  temperature: 0.9            # 采样参数会被记进报告，复现靠它
+  top_p: 0.8
+
+judge_model:
+  provider: Dashscope
+  model_name: qwen-max
+  api_key: sk-xxxx
+```
 
 ### 核心测试
 
@@ -178,8 +212,8 @@ uv run python -m benchmarks `
 uv run python -m benchmarks --core --harness brain `
   --models deepseekflash qwen3_8 glm5_2 `
   --judge-model qwen3_7_flash `
-  --resume-from benchmarks/results/2026-08-24_092753.checkpoint.json `
-  --out benchmarks/results/2026-08-24_092753.json
+  --resume-from results/2026-08-24_092753.checkpoint.json `
+  --out results/2026-08-24_092753.json
 ```
 
 系统会检查模型、场景、次数、时间、Judge、重试和有效性参数。参数不同会停止继续运行。
@@ -209,3 +243,32 @@ Markdown 默认显示每个指标的 Top-10。每个样本包含场景输入和�
 | `--log-level LEVEL` | 设置日志级别 |
 
 固定时间默认为 `2026-08-14T12:00:00+08:00`。传入空字符串可以使用真实时间。
+
+## 复现一次跑批
+
+基准只保存结果，不打包环境。报告 `config` 段记下了复现需要的锚点：
+
+| 字段 | 内容 | 用途 |
+| --- | --- | --- |
+| `git_revision` | 被测 Muika 的 commit；独立安装时是带短哈希的版本串（如 `1.5.5.dev59+g6ee57bc`） | 行为差异的第一来源，换了它就换了一切 |
+| `persona_template_sha256` | 实际生效的人格模板内容哈希 | 对不上说明模板被改过，分数不可比 |
+| `model_specs` | 候选模型的 `provider / model_name / temperature / top_p` | 按名字重建 models.yml；配置里其余字段（`max_tokens`、`extra_body` 等）不入报告，需要自己对齐 |
+| `judge_model` | Judge 的配置名 | 换 Judge 等于换评分口径 |
+| `benchmark_version` | 基准自身的版本 | 跨报告对比分数前先看这里 |
+
+把 Muika 切到 `git_revision`、按 `model_specs` 与 `judge_model` 重建配置、用记录的同名参数重跑即可。`--fixed-time` 与 `--seed` 只固定注入时间和场景采样，模型侧仍受 provider 温度采样影响，两次跑批不会逐字相同。
+
+### 人格模板
+
+人格模板由被测的 Muika 提供，基准不复制副本，只记录哈希：
+
+| 路径 | 优先级 | 说明 |
+| --- | --- | --- |
+| `./templates/` | 高 | 运行目录下的覆盖层，可以在这里试改人格而不动 Muika |
+| `builtin_templates/`（Muika 包内） | 低 | 内置模板 |
+
+文件名来自 `PERSONA_TEMPLATE` 配置（默认 `Muika.md.jinja2`）。基准走 Muika 自己的模板搜索路径，所以报告里的哈希对应 Brain 真正渲染的那份模板，而不是写死的内置文件名——换模板一定会在报告里留下痕迹。模板体系见[人设定制](https://mas.snowy.moe/guide/persona)。
+
+## 许可证
+
+本项目基于 [BSD 3](LICENSE) 许可证提供，涉及到再分发时请保留许可文件的副本。

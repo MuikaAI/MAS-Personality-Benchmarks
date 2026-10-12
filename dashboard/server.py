@@ -16,7 +16,7 @@ METRICS = ("dialogue_experience", "action_ability", "distortion_rate", "availabi
 CONFIG_FIELDS = ("benchmark_version", "judge_model", "harness", "suite", "trials", "git_revision")
 STATIC_DIR = Path(__file__).with_name("static")
 DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
-LOGO_PATH = Path(__file__).resolve().parents[2] / "docs" / "public" / "favicon.png"
+LOGO_PATH = Path(__file__).with_name("static") / "favicon.png"
 REPORTS_DIR_KEY = web.AppKey("reports_dir", Path)
 
 
@@ -118,6 +118,8 @@ def create_app(reports_dir: Path | str = DEFAULT_REPORTS_DIR) -> web.Application
         return web.json_response(load_reports(request.app[REPORTS_DIR_KEY]))
 
     async def logo(_: web.Request) -> web.FileResponse:
+        if not LOGO_PATH.is_file():
+            raise web.HTTPNotFound()
         return web.FileResponse(LOGO_PATH)
 
     app.router.add_get("/", index)
