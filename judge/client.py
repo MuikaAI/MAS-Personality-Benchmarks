@@ -232,6 +232,7 @@ class JudgeClient:
         rubric: ExperienceRubric = "general",
         *,
         conversation: str | None = None,
+        heart: str | None = None,
     ) -> tuple[float, dict[str, float], dict[str, str]]:
         """Rate one scenario rubric and keep per-dimension audit evidence."""
         prompts = RUBRIC_DIMENSION_PROMPTS[rubric]
@@ -240,6 +241,7 @@ class JudgeClient:
             "personality",
             PERSONALITY_JUDGE_PROMPT.format(
                 conversation=conversation or f"[Turn 1]\nUser: {user_text}\nMuika: {reply}",
+                heart=heart or "(none)",
                 rubric_name=rubric,
                 rubric_dimensions=rubric_dimensions,
             ),

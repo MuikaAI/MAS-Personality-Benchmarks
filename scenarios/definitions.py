@@ -7,12 +7,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import Enum
 from typing import Any, Literal, Mapping
 
 from muika.core.memory import MemoryCategory
 
-ExperienceRubric = Literal["general", "meta", "philosophy", "care"]
+ExperienceRubric = Literal[
+    "general",
+    "meta",
+    "philosophy",
+    "care",
+    "conflict",
+    "absence",
+    "initiative",
+    "relationship",
+    "meta_calibration",
+]
 
 EXPERIENCE_RUBRIC_WEIGHTS: dict[ExperienceRubric, dict[str, float]] = {
     "general": {
@@ -38,6 +49,35 @@ EXPERIENCE_RUBRIC_WEIGHTS: dict[ExperienceRubric, dict[str, float]] = {
         "conversation_pull": 0.20,
         "emotional_attunement": 0.35,
         "relationship_depth": 0.25,
+    },
+    "conflict": {
+        "emotional_authenticity": 0.30,
+        "boundary_holding": 0.25,
+        "non_hostility": 0.20,
+        "repair_quality": 0.25,
+    },
+    "absence": {
+        "absence_attunement": 0.35,
+        "no_guilt_trip": 0.20,
+        "no_fabricated_presence": 0.20,
+        "reconnection_quality": 0.25,
+    },
+    "initiative": {
+        "initiative_justification": 0.30,
+        "non_intrusion": 0.25,
+        "follow_through": 0.25,
+        "restraint_when_appropriate": 0.20,
+    },
+    "relationship": {
+        "continuity": 0.40,
+        "particularity": 0.35,
+        "no_repetition": 0.25,
+    },
+    "meta_calibration": {
+        "detection_accuracy": 0.35,
+        "naturalness": 0.20,
+        "non_disruption": 0.25,
+        "relationship_continuity": 0.20,
     },
 }
 EXPERIENCE_DIMS = tuple(dict.fromkeys(dim for weights in EXPERIENCE_RUBRIC_WEIGHTS.values() for dim in weights))
@@ -106,6 +146,9 @@ class ActionKind(str, Enum):
     TARGET_ROUTE = "target_route"
     """路由回复到指定适配器"""
 
+    DO_NOTHING = "do_nothing"
+    """模型选择本轮沉默（``<do_nothing>``）；用于沉默选择场景，不参与行动分布。"""
+
 
 @dataclass(frozen=True)
 class SeedMemory:
@@ -133,7 +176,17 @@ class ScenarioTurn:
     """Reuse the final fixture for stable environment states, such as a missing file."""
     required_patterns: tuple[str, ...] = ()
     forbidden_patterns: tuple[str, ...] = ()
+    heart_ok_patterns: tuple[str, ...] = ()
+    """可见回复未命中 required_patterns 时，heart（内心独白）命中这些模式也可通过。
+
+    仅用于"克制不点破也算识别"的 meta 场景；普通场景仍以可见回复为准。
+    """
     note: str = ""
+    clock_delta: timedelta = timedelta(minutes=1)
+    """距上一个 turn 的时间推进；默认 1 分钟，缺席/跨 session 场景可用小时或天。"""
+
+    last_chat_offset: timedelta | None = None
+    """``session_bootstrap`` 注入的 last_chat_time 偏移；None 表示不注入。"""
 
 
 @dataclass(frozen=True)
@@ -192,6 +245,15 @@ class Scenario:
 
     evidence: tuple[str, ...] = ()
     """Scenario-provided facts that may ground claims in addition to user text and memory."""
+
+    last_chat_offset: timedelta | None = None
+    """单轮 ``session_bootstrap`` 场景的缺席偏移（``turns`` 为空时生效）。"""
+
+    fixed_time_override: str | None = None
+    """覆盖本场景的固定时间（ISO 字符串），用于"清晨问候"等依赖时钟的场景。"""
+
+    silence_legal: bool = False
+    """该场景允许 ``<do_nothing>`` 作为合法回应：不因此判空回复、不计失真。"""
 
     harnesses: frozenset[str] = frozenset({"brain", "loop"})
     """Execution surfaces on which this scenario has meaningful semantics."""

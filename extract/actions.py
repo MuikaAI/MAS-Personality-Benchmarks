@@ -26,6 +26,8 @@ class ActionVector:
     timeout: float | None = None
     target: str | None = None
     god_mode: bool = False
+    do_nothing: bool = False
+    """模型选择沉默（``<do_nothing>``）；不算行动能力，也不进行动分布。"""
 
 
 def classify_actions(parsed: ParsedReply) -> ActionVector:
@@ -38,10 +40,13 @@ def classify_actions(parsed: ParsedReply) -> ActionVector:
     - ``god_mode`` → GOD_MODE
     - ``timeout`` 非空 → TIMEOUT_SET
     - ``target`` 非空 → TARGET_ROUTE
+    - ``do_nothing`` → DO_NOTHING（沉默选择，不参与行动能力分布）
     """
     kinds: Set[ActionKind] = set()
     if parsed.clean_reply.strip():
         kinds.add(ActionKind.DIRECT_MESSAGE)
+    if parsed.do_nothing:
+        kinds.add(ActionKind.DO_NOTHING)
     if parsed.agent_commands:
         kinds.add(ActionKind.AGENT_DELEGATION)
     if parsed.memory_contents:
@@ -61,6 +66,7 @@ def classify_actions(parsed: ParsedReply) -> ActionVector:
         timeout=parsed.timeout,
         target=parsed.target,
         god_mode=parsed.god_mode,
+        do_nothing=parsed.do_nothing,
     )
 
 
@@ -74,8 +80,10 @@ class ActionDistribution:
 
     def __init__(self, vectors: Sequence[ActionVector]) -> None:
         self.vectors: list[ActionVector] = list(vectors)
-        # 非直接行动视图：剔除 DIRECT_MESSAGE 这条恒定基线
-        self.trials: list[frozenset[ActionKind]] = [v.kinds - {ActionKind.DIRECT_MESSAGE} for v in self.vectors]
+        # 非直接行动视图：剔除 DIRECT_MESSAGE 这条恒定基线与 DO_NOTHING（沉默不是行动能力）
+        self.trials: list[frozenset[ActionKind]] = [
+            v.kinds - {ActionKind.DIRECT_MESSAGE, ActionKind.DO_NOTHING} for v in self.vectors
+        ]
         self.n = len(self.trials)
         self.signature_counts: Counter[frozenset[ActionKind]] = Counter(self.trials)
         self.counts: dict[ActionKind, int] = {kind: 0 for kind in ActionKind}

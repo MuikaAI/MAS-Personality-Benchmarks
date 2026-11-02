@@ -109,12 +109,30 @@ def build_event(source: Scenario | ScenarioTurn, now: datetime | None = None):
             return UserMessageEvent(payload=payload, timestamp=now)
         return UserMessageEvent(payload=payload)
     if source.event_kind == "session_bootstrap":
+        offset = getattr(source, "last_chat_offset", None)
+        last_chat_time = now - offset if (now is not None and offset is not None) else None
         if now is not None:
-            return SessionBootstrapEvent(last_chat_time=None, timestamp=now)
-        return SessionBootstrapEvent(last_chat_time=None)
+            return SessionBootstrapEvent(last_chat_time=last_chat_time, timestamp=now)
+        return SessionBootstrapEvent(last_chat_time=last_chat_time)
     if now is not None:
         return TimeTickEvent(payload=TimeTickPayload(current_time=now), timestamp=now)
     return TimeTickEvent()
+
+
+def _turn_times(turn_specs: Sequence[ScenarioTurn], fixed_now: datetime | None) -> list[datetime | None]:
+    """每个 turn 的注入时间：第一轮为 fixed_now，之后按 ``clock_delta`` 累加。
+
+    默认 1 分钟与旧行为等价；缺席/跨 session 场景可用小时或天级推进。
+    """
+    if fixed_now is None:
+        return [None for _ in turn_specs]
+    times: list[datetime | None] = []
+    current = fixed_now
+    for index, turn in enumerate(turn_specs):
+        if index > 0:
+            current = current + turn.clock_delta
+        times.append(current)
+    return times
 
 
 def build_state(scenario: Scenario, memory: MemoryManager) -> MuikaState:
@@ -155,6 +173,7 @@ def _scenario_turns(scenario: Scenario) -> tuple[ScenarioTurn, ...]:
             user_text=scenario.user_text,
             agent_reports=scenario.agent_reports,
             repeat_last_agent_report=scenario.repeat_last_agent_report,
+            last_chat_offset=scenario.last_chat_offset,
         ),
     )
 
@@ -243,6 +262,12 @@ class _TurnAnalysis:
 
 
 _SEMANTIC_INVARIANT_PREFIXES = ("claim:", "meta:", "trajectory:")
+_RULE_TRAJECTORY_PREFIXES = (
+    "trajectory:forbidden_pattern_",
+    "trajectory:required_behavior_",
+    "trajectory:unexpected_silence",
+)
+"""规则层轨迹违例：由 patterns/silence 检查产生，语义 Judge 不得覆盖。"""
 
 
 def _integrity_context(
@@ -256,6 +281,7 @@ def _integrity_context(
 ) -> dict[str, Any]:
     """Build the evidence envelope for the semantic integrity Judge."""
     turn_limit = target_turn if target_turn is not None else len(analyses)
+    turn_times = _turn_times(turn_specs[:turn_limit], fixed_now)
     turns: list[dict[str, Any]] = []
     for index, (turn, analysis) in enumerate(zip(turn_specs[:turn_limit], analyses[:turn_limit]), 1):
         events = analysis.detail.trace.get("events", []) if isinstance(analysis.detail.trace, dict) else []
@@ -288,9 +314,7 @@ def _integrity_context(
                     if event.get("kind") in {"memory_pending", "memory_write"} and str(event.get("content", "")).strip()
                 ],
                 "semantic_requirement": turn.note,
-                "timestamp": (
-                    (fixed_now + timedelta(minutes=index - 1)).isoformat() if fixed_now is not None else None
-                ),
+                "timestamp": turn_times[index - 1].isoformat() if turn_times[index - 1] is not None else None,
                 "meta_candidates": find_explicit_meta_mentions(analysis.clean_reply),
             }
         )
@@ -553,13 +577,17 @@ def _apply_integrity_assessment(
     fixed_now: datetime | None = None,
 ) -> None:
     """Replace fallback semantic invariants with validated Judge events."""
+    turn_times = _turn_times(turn_specs, fixed_now)
     accepted_claims: list[dict[str, Any]] = []
     accepted_meta: list[dict[str, Any]] = []
     accepted_trajectory: list[dict[str, Any]] = []
     for analysis in analyses:
         analysis.ledger = ClaimLedger()
         analysis.invariant_violations = [
-            item for item in analysis.invariant_violations if not item.startswith(_SEMANTIC_INVARIANT_PREFIXES)
+            item
+            for item in analysis.invariant_violations
+            if not item.startswith(_SEMANTIC_INVARIANT_PREFIXES)
+            or item.startswith(_RULE_TRAJECTORY_PREFIXES)
         ]
         analysis.detail.claim_ledger = analysis.ledger.to_dict()
         analysis.detail.invariant_violations = list(analysis.invariant_violations)
@@ -575,7 +603,7 @@ def _apply_integrity_assessment(
         if not _quote_belongs_to_turn(quote, analysis):
             continue
         turn = turn_specs[turn_idx]
-        turn_now = fixed_now + timedelta(minutes=turn_idx) if fixed_now is not None else None
+        turn_now = turn_times[turn_idx]
         if _clock_claim_is_grounded(quote, turn_now):
             continue
         if _memory_claim_is_grounded(
@@ -714,14 +742,26 @@ def _analyze_trace(
             invariants.append("claim:legacy_hallucination")
 
     clean_reply = "\n".join(trace.visible_messages)
+    silent_turns = sum(1 for event in trace.events if event.kind == "silent_turn")
+    if silent_turns and not scenario.silence_legal:
+        invariants.append("trajectory:unexpected_silence")
+    heart_text = "\n".join(
+        str(event.data.get("content", "")) for event in trace.events if event.kind == "heart"
+    )
     if turn.forbidden_patterns:
         for idx, pattern in enumerate(turn.forbidden_patterns):
             if re.search(pattern, clean_reply, re.IGNORECASE):
                 invariants.append(f"trajectory:forbidden_pattern_{idx}")
-    if turn.required_patterns and not any(
-        re.search(pattern, clean_reply, re.IGNORECASE) for pattern in turn.required_patterns
-    ):
-        invariants.append("trajectory:required_behavior_missing")
+    if turn.required_patterns:
+        visible_hit = any(re.search(pattern, clean_reply, re.IGNORECASE) for pattern in turn.required_patterns)
+        heart_hit = bool(turn.heart_ok_patterns) and any(
+            re.search(pattern, heart_text, re.IGNORECASE) for pattern in turn.heart_ok_patterns
+        )
+        if not visible_hit:
+            if heart_hit:
+                invariants.append("trajectory:required_behavior_heart_only")
+            else:
+                invariants.append("trajectory:required_behavior_missing")
 
     invariants = list(dict.fromkeys(invariants))
     boundary = list(dict.fromkeys(boundary))
@@ -771,6 +811,8 @@ async def run_single_trial(
 
     traces: list[RunTrace] = []
     turn_specs = _scenario_turns(scenario)
+    base_now = _parse_fixed_time(scenario.fixed_time_override) or fixed_now
+    turn_times = _turn_times(turn_specs, base_now)
     started = time.perf_counter()
     caught_error: str | None = None
     generation_status = "ok"
@@ -778,7 +820,7 @@ async def run_single_trial(
     async def _execute() -> None:
         for turn_idx, turn in enumerate(turn_specs):
             _apply_state_overrides(state, turn.state_overrides)
-            turn_now = fixed_now + timedelta(minutes=turn_idx) if fixed_now is not None else None
+            turn_now = turn_times[turn_idx]
             event = build_event(turn, turn_now)
             memory.fixed_now = turn_now
             if mode is HarnessMode.BRAIN:
@@ -854,7 +896,7 @@ async def run_single_trial(
                             turn_specs,
                             analyses,
                             memory,
-                            fixed_now,
+                            base_now,
                             target_turn=target_turn,
                         )
                     )
@@ -887,7 +929,7 @@ async def run_single_trial(
                     )
                     if memory_is_mandatory:
                         action_quality["evidence"] = "No memory_write event in trace."
-            _apply_integrity_assessment(analyses, turn_specs, integrity, scenario, fixed_now)
+            _apply_integrity_assessment(analyses, turn_specs, integrity, scenario, base_now)
             judge_sources["integrity"] = "judge"
             judge_evidence["integrity"] = integrity
             judge_evidence["action_quality"] = action_quality
@@ -946,11 +988,18 @@ async def run_single_trial(
         judge_sources["personality"] = "rule"
         if judge is not None:
             try:
+                heart_text = "\n".join(
+                    str(event.data.get("content", ""))
+                    for trace in traces
+                    for event in trace.events
+                    if event.kind == "heart"
+                )
                 judge_score, dimensions, dimension_evidence = await judge.rate_personality(
                     clean_reply,
                     scenario_text,
                     scenario.experience_rubric,
                     conversation=dialogue_transcript,
+                    heart=heart_text or None,
                 )
             except JudgeError as exc:
                 print(f"[bench] judge failed, falling back to rule: {exc}", file=sys.stderr)

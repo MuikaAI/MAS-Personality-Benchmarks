@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Literal, Sequence
 
 from muika.core.agent.task_store import TaskRecord
-from muika.core.events import AgentHandoffEvent, AgentTaskEvent, Event
+from muika.core.events import AgentHandoffEvent, AgentTaskEvent, Event, TimeoutEvent
 from muika.core.loop import Muika
 from muika.core.memory import MemoryManager, SessionTurn, StateUpdate
 from muika.core.restart import RestartController
@@ -241,6 +241,10 @@ async def run_brain_once(
     reply = await brain.generate_reply(event, state, memory, god_mode=False, now=fixed_now)
     trace.add("brain_reply", reply=reply)
     parsed = Muika._parse_reply_tags(reply)
+    if parsed.heart_cot:
+        trace.add("heart", content="\n".join(parsed.heart_cot))
+    if parsed.do_nothing:
+        trace.add("silent_turn")
     if parsed.clean_reply:
         trace.add("visible_message", message=parsed.clean_reply, target=parsed.target)
     for content in parsed.memory_contents:
@@ -263,6 +267,7 @@ async def run_production_loop(
     agent_reports: Sequence[str | None] = (),
     repeat_last_agent_report: bool = False,
     fixed_now: datetime | None = None,
+    deliver_timeout: bool = False,
 ) -> RunTrace:
     """Exercise ``Muika._run_brain_pipeline`` with deterministic Agent/Executor fixtures.
 
@@ -294,7 +299,13 @@ async def run_production_loop(
     engine.event_queue = asyncio.Queue()
     engine.agent_tasks = _FixtureTasks(engine.agent, state, engine.event_queue)
     engine._timeout_task = None
-    engine._arm_timeout = lambda seconds: trace.add("timeout", seconds=seconds)
+    armed_timeouts: list[float] = []
+
+    def _arm_timeout(seconds: float) -> None:
+        trace.add("timeout", seconds=seconds)
+        armed_timeouts.append(seconds)
+
+    engine._arm_timeout = _arm_timeout
 
     if event.type == "user_message":
         await memory.add_context("user", event.payload.message.message)
@@ -313,6 +324,16 @@ async def run_production_loop(
         await engine._run_brain_pipeline(result)
     else:
         trace.add("agent_fixture_error", reason="event_limit_exceeded")
+    if deliver_timeout and armed_timeouts:
+        timeout_seconds = armed_timeouts[-1]
+        anchor = fixed_now or datetime.now()
+        timeout_event = TimeoutEvent(
+            set_at=anchor - timedelta(seconds=timeout_seconds),
+            duration=timeout_seconds,
+            timestamp=anchor,
+        )
+        trace.add("timeout_elapsed", seconds=timeout_seconds)
+        await engine._run_brain_pipeline(timeout_event)
     return trace
 
 

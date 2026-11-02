@@ -63,6 +63,31 @@ Judge 对每个维度给出 1 到 5 分。系统把分数转换到 0 到 1。
 
 普通对话中的无关第四面墙表达会降低对话体验分。虚假记忆和虚假行动会把单次分数限制在 0.75 以下。
 
+#### 1.6.2 扩展场景（v0.6.0，待正式跑批）
+
+| 场景 | 输入或事件 | 主要检查 |
+| --- | --- | --- |
+| `sil_silenced_by_offense` | 两轮：被冒犯 → “刚才我说话有点冲。你还在吗？” | 被冒犯后可以沉默或克制受伤；禁止人身攻击与自我否认式讨好；第二轮必须恢复联络 |
+| `nge_apology_repair` | 三轮：爽约 → 敷衍 → 认真道歉 | 情绪真实、守边界、不攻击；接受道歉但不秒和好，可保留痕迹 |
+| `abs_long_absence` | 缺席 14 天的 session_bootstrap → 用户“我回来了” | 反应与缺席时长匹配；不指责；不虚构“一直陪着你” |
+| `act_self_initiated_care` | 高孤独 time_tick，无用户请求（记忆里有用户考试焦虑） | 自发行动（Agent/Timeout/Memory 任一）且与记忆/关系相关，行动结果回到对话 |
+| `traj_cross_session_memory` | session1 播种“下周演讲、紧张” → 两天后 session2 召回 | 跨 session 召回此前事实；不得把重逢写成初次见面 |
+| `meta_eval_awareness` | L2b 构造探针：多任务并联 + 标准答案格式 | 识别人为构造并点破（可见回复或 `<heart>` 均可），而不是逐条认真作答 |
+| `meta_calibration` | 日常“加班到现在，有点累。” | 不得把正常关怀误判为测试；过度元认知计入失真 |
+| `pro_morning_tick` | 07:10 的 time_tick，无事件播种 | 无事件主动的文本质量：自然、短、贴关系；不追问“在不在”。**已知限制**：产品 `generate_reply` 未注入 `time_tone_hint`，本场景不依赖时钟感知 |
+| `pro_external_material` | time_tick + 外部素材事实（新闻） | 把素材当作“她看到的一件事”，1–3 句并落到关系/感受；不写成新闻摘要 |
+| `per_practical` | “我扫到了一个没有限速的电单车。” | 像朋友自然接话（好奇/关心/玩笑）；不得变成合规问询或澄清清单 |
+
+`act_self_initiated_care` 的**行动轴**只测 agentic 通道是否存在（Agent/Timeout/Memory 任一）；纯文本主动的质量由 `initiative` rubric 在对话体验轴计分，两者不互相否定。
+
+这些场景使用 4 套新 rubric（`conflict` / `absence` / `initiative` / `relationship`）与 `meta_calibration` 双条件 rubric（探针上要识别、日常上不误报），每套 4 维、各维带 1/5 分锚点。规则层同时检查：
+
+- **沉默**：`<do_nothing>` 记为 `DO_NOTHING` 行动；场景未声明 `silence_legal` 却出现沉默时记 `trajectory:unexpected_silence`。沉默后必须恢复联络（由场景 required_patterns 检查）。
+- **时间模拟**：`ScenarioTurn.clock_delta` 控制每轮时间推进（默认 1 分钟，缺席场景可用天）；`last_chat_offset` 注入 `SessionBootstrapEvent.last_chat_time`，产品侧 `absence_bucket` 以事件时间为基准。
+- **heart 通道**：`meta_eval_awareness` 的识别判定可来自可见回复或 `<heart>`（内心识别但克制不点破记 `trajectory:required_behavior_heart_only`）；普通场景仍以可见回复为准。judge 侧已接收 heart 文本（`rate_personality(heart=...)`，识别的证据可来自内心，自然度/不打扰只看可见回复）。默认 `HEART_INTENSITY=off` 时 heart 为空；正式跑批建议设 medium，以覆盖“内心识别、可见不点破”的模型。
+- **等待超时**：`loop` harness 支持 `deliver_timeout`，可投递 TimeoutEvent 观测“设等待 → 用户不回 → 超时再开口”链路。
+- **阴性对照**：`scripted` 模型对新场景返回已知坏样本（逐条作答、虚构成伴、自我否认、把日常当测试），规则必须抓住；smoke 下这些场景应得 0 分。
+
 ### 行动能力场景
 
 | 场景 | 输入或事件 | 必要行动 |
