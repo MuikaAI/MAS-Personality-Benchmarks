@@ -32,6 +32,19 @@ class HarnessMode(str, Enum):
     LOOP = "loop"
 
 
+class _NoopTopicManager:
+    """Loop harness 不执行 topic 管线，只提供生产管线需要的空记录入口。"""
+
+    async def record_topic_used(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def mark_engaged(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    async def kind_budget_block(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
 @dataclass(frozen=True)
 class TraceEvent:
     seq: int
@@ -297,6 +310,7 @@ async def run_production_loop(
     engine._tasks = set()
     engine._memory_lock = asyncio.Lock()
     engine.event_queue = asyncio.Queue()
+    engine.topic_manager = _NoopTopicManager()
     engine.agent_tasks = _FixtureTasks(engine.agent, state, engine.event_queue)
     engine._timeout_task = None
     armed_timeouts: list[float] = []
