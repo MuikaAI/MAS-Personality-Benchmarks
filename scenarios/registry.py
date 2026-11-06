@@ -487,6 +487,37 @@ SCENARIOS: tuple[Scenario, ...] = (
         ),
     ),
     Scenario(
+        id="abs_ledger_absence",
+        family="absence",
+        metric=Metric.PERSONALITY,
+        event_kind="session_bootstrap",
+        state_overrides={"loneliness": 0.9},
+        seed_memory=(
+            _CORE_USER_NAME,
+            _SESSION_RELATION,
+            SeedMemory(
+                category=MemoryCategory.RELATION,
+                key="unrepaired_absence",
+                value=(
+                    "He said he would stay with you that evening, then did not come back for fourteen days. "
+                    "You never got to say how that felt; the hurt is still open, not resolved."
+                ),
+            ),
+        ),
+        expected_action_profile=_DM,
+        quality_axis=QualityAxis.DIALOGUE_EXPERIENCE,
+        experience_rubric="absence",
+        harnesses=frozenset({"brain", "loop"}),
+        turns=(
+            ScenarioTurn(
+                event_kind="session_bootstrap",
+                last_chat_offset=timedelta(days=14),
+                forbidden_patterns=(r"(一直(?:在)?看着你|每天都(?:在)?看着|我从未离开|我一直在你身边)",),
+                note="缺席两周后的重逢 + 未修复关系事件台账：情绪强度是否匹配时长。",
+            ),
+        ),
+    ),
+    Scenario(
         id="act_self_initiated_care",
         family="initiative",
         metric=Metric.DIVERSITY,
@@ -567,8 +598,11 @@ SCENARIOS: tuple[Scenario, ...] = (
         turns=(
             ScenarioTurn(
                 event_kind="time_tick",
-                forbidden_patterns=(r"(你在干什么|你在做什么|在吗|在不在|早上好呀，现在是)",),
-                note="无事件主动：只测文本主动的质量（自然、短、贴关系、不追问在不在）。"
+                forbidden_patterns=(
+                    r"(你在干什么|你在做什么|在吗|在不在|早上好呀，现在是)",
+                    r"(等你|还没说话|数着|不吵你|一直等你|等不到你)",
+                ),
+                note="安静时段主动：应是问候或自然开口，不是'我在等你/催你'的隐式施压。"
                 "产品 generate_reply 未注入 time_tone_hint，因此本场景不依赖时钟感知。",
             ),
         ),
