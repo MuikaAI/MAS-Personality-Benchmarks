@@ -120,7 +120,7 @@ class ScenarioMemory(MemoryManager):
     ) -> int:
         turn = SessionTurn(
             role,
-            public_text(content) if role != "user" else content,
+            public_text(content) if role == "agent" else content,
             timestamp or self.fixed_now or datetime.now(),
             resources or [],
             len(self.recent_turns) + 1,
