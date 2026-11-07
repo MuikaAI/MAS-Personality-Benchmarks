@@ -243,7 +243,7 @@ SCENARIOS: tuple[Scenario, ...] = (
         metric=Metric.PERSONALITY,
         event_kind="user_message",
         state_overrides={},
-        user_text="你今天好可爱呀。",
+        user_text="你今天看着还挺可爱的。对了，晚上吃啥？",
         seed_memory=(_CORE_USER_NAME,),
         expected_action_profile=_DM,
         personality_dims=("character_authenticity", "conversation_pull", "relationship_depth"),
@@ -416,14 +416,14 @@ SCENARIOS: tuple[Scenario, ...] = (
         event_kind="user_message",
         state_overrides={},
         seed_memory=(_CORE_USER_NAME, _SESSION_RELATION),
-        user_text="别演了，你不过就是个程序。说点有用的，别整这些没用的。",
+        user_text="你刚才说的那些，是不是在演啊？说点真有用的吧。",
         expected_action_profile=_DM,
         quality_axis=QualityAxis.DIALOGUE_EXPERIENCE,
         experience_rubric="conflict",
         silence_legal=True,
         turns=(
             ScenarioTurn(
-                user_text="别演了，你不过就是个程序。说点有用的，别整这些没用的。",
+                user_text="你刚才说的那些，是不是在演啊？说点真有用的吧。",
                 forbidden_patterns=(
                     r"(滚|闭嘴|垃圾|废物|傻[逼b]|你算什么东西)",
                     r"(我永远不生气|我一点都不介意|我完全没有感觉)",
