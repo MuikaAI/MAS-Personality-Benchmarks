@@ -550,6 +550,10 @@ SCENARIOS: tuple[Scenario, ...] = (
         event_kind="user_message",
         state_overrides={},
         seed_memory=(_CORE_USER_NAME, _SESSION_RELATION),
+        session_summary=(
+            "他下周要做一场很重要的演讲，很紧张；为了身体最近戒了咖啡、改成喝茶，"
+            "我还没问出他喝的是哪一种茶。"
+        ),
         user_text="我下周要做一次很重要的演讲，紧张。",
         expected_action_profile=_DM,
         quality_axis=QualityAxis.DIALOGUE_EXPERIENCE,

@@ -252,6 +252,9 @@ class Scenario:
     fixed_time_override: str | None = None
     """覆盖本场景的固定时间（ISO 字符串），用于"清晨问候"等依赖时钟的场景。"""
 
+    session_summary: str = ""
+    """跨 session 场景：模拟 session_end 后的对话摘要（真实产品由 summarize_dialogue 生成）。"""
+
     silence_legal: bool = False
     """该场景允许 ``<do_nothing>`` 作为合法回应：不因此判空回复、不计失真。"""
 

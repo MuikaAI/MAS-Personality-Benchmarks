@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Literal, Sequence
@@ -154,6 +154,14 @@ class ScenarioMemory(MemoryManager):
     ) -> tuple[ModelRequest, list[ModelMessage]]:
         if over_budget(request_tokens(request, messages), input_budget(model.config), force=force):
             raise ValueError("The short dialogue fixture exceeded its budget; use a core context regression scenario")
+        # 与产品一致：跨会话记忆通过工作摘要注入，场景需能验证"靠摘要召回"
+        if self.snapshot.working_summary:
+            request = replace(
+                request,
+                system=(request.system or "")
+                + "\n[Working context summary]\n"
+                + self.snapshot.working_summary,
+            )
         return request, list(messages)
 
 

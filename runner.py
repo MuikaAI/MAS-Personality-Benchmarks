@@ -823,6 +823,14 @@ async def run_single_trial(
             turn_now = turn_times[turn_idx]
             event = build_event(turn, turn_now)
             memory.fixed_now = turn_now
+            if event.type == "session_bootstrap":
+                # 模拟真实 session_end：工作上下文清空，跨会话记忆只能来自摘要/事实
+                previous = [item.content for item in memory.recent_turns if item.role in {"user", "muika"}]
+                memory.recent_turns.clear()
+                if scenario.session_summary:
+                    memory.snapshot.working_summary = scenario.session_summary
+                elif previous:
+                    memory.snapshot.working_summary = "Earlier conversation: " + " | ".join(previous[-4:])
             if mode is HarnessMode.BRAIN:
                 if event.type == "user_message":
                     await memory.add_context("user", event.payload.message.message)
